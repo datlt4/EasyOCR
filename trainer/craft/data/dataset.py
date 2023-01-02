@@ -58,6 +58,7 @@ class CraftBaseDataset(Dataset):
             random.seed(0)
             self.idx = random.sample(
                 range(0, self.nSamples, self.sample)
+            )
 
         self.pre_crop_area = []
 
