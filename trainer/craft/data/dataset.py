@@ -141,7 +141,6 @@ class CraftBaseDataset(Dataset):
             return self.nSamples
 
     def __getitem__(self, index):
-        import pudb; pudb.set_trace()
         if self.sample != -1:
             index = self.idx[index]
         if self.saved_gt_dir is None:
@@ -167,7 +166,7 @@ class CraftBaseDataset(Dataset):
 
         if self.vis_opt:
             saveImage(
-                self.img_names[index],
+                self.img_name,
                 self.vis_test_dir,
                 image.copy(),
                 word_level_char_bbox.copy(),
@@ -183,7 +182,7 @@ class CraftBaseDataset(Dataset):
 
         if self.vis_opt:
             saveInput(
-                self.img_names[index],
+                self.img_name,
                 self.vis_test_dir,
                 image,
                 region_score,
@@ -377,6 +376,8 @@ class CustomDataset(CraftBaseDataset):
 
         with self.env.begin(write=False) as txn:
             self.nSamples = int(txn.get('num-samples'.encode()))
+        
+        self.img_name = ""
 
     def update_model(self, net):
         self.net = net
@@ -421,14 +422,13 @@ class CustomDataset(CraftBaseDataset):
         return np.array(word_bboxes), words
 
     def load_data(self, index):
-        import pudb; pudb.set_trace()
         with self.env.begin(write=False) as txn:
             imageKey = 'image-%09d'.encode() % index
             labelKey = 'label-%09d'.encode() % index
             nameKey = 'name-%09d'.encode() % index
             imageBin = txn.get(imageKey)
             labelBin = txn.get(labelKey)
-            img_name = txn.get(nameKey).decode("utf-8-sig")
+            self.img_name = txn.get(nameKey).decode("utf-8-sig")
 
         #img_name = self.img_names[index]
         #img_path = os.path.join(self.img_dir, img_name)
@@ -462,7 +462,7 @@ class CustomDataset(CraftBaseDataset):
                 continue
 
             pseudo_char_bbox, confidence, horizontal_text_bool = self.pseudo_charbox_builder.build_char_box(
-                self.net, self.gpu, image, word_bboxes[i], words[i], img_name=img_name)
+                self.net, self.gpu, image, word_bboxes[i], words[i], img_name=self.img_name)
 
             cv2.fillPoly(confidence_mask, [
                          np.int32(_word_bboxes[i])], confidence)
@@ -529,7 +529,7 @@ class CustomDataset(CraftBaseDataset):
         :rtype word_level_char_bbox: np.float32
         :rtype words: list
         """
-        img_name = self.img_names[index]
+        img_name = self.img_name
         img_path = os.path.join(self.img_dir, img_name)
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -541,7 +541,7 @@ class CustomDataset(CraftBaseDataset):
         image, word_bboxes = rescale(image, word_bboxes)
         img_h, img_w, _ = image.shape
 
-        query_idx = int(self.img_names[index].split(".")[0].split("_")[1])
+        query_idx = int(self.img_name.split(".")[0].split("_")[1])
 
         saved_region_scores_path = os.path.join(
             self.saved_gt_dir, f"res_img_{query_idx}_region.jpg"
