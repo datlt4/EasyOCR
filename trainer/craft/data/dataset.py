@@ -363,16 +363,16 @@ class CustomDataset(CraftBaseDataset):
         )
         self.vis_index = list(range(1000))
 
-        self.img_dir = os.path.join(data_dir, "ch4_training_images")
-        self.img_gt_box_dir = os.path.join(
-            data_dir, "ch4_training_localization_transcription_gt"
-        )
-        self.img_names = os.listdir(self.img_dir)
+        #self.img_dir = os.path.join(data_dir, "ch4_training_images")
+        #self.img_gt_box_dir = os.path.join(
+        #    data_dir, "ch4_training_localization_transcription_gt"
+        #)
+        #self.img_names = os.listdir(self.img_dir)
 
-        self.env = lmdb.open("htc-dataset-100/train_ma", max_readers=32, readonly=True, lock=False, readahead=False, meminit=False)
+        self.env = lmdb.open(os.path.join(data_dir, "train_ma"), max_readers=32, readonly=True, lock=False, readahead=False, meminit=False)
 
         if not self.env:
-            print("cannot create lmdb from %s" % ("htc-dataset-100/train_ma"))
+            print("cannot create lmdb from %s" % (os.path.join(data_dir, "train_ma")))
             sys.exit(1)
 
         with self.env.begin(write=False) as txn:
