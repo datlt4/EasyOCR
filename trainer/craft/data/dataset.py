@@ -57,7 +57,7 @@ class CraftBaseDataset(Dataset):
         if self.sample != -1:
             random.seed(0)
             self.idx = random.sample(
-                range(0, len(self.img_names)), self.sample)
+                range(0, self.nSamples, self.sample)
 
         self.pre_crop_area = []
 
