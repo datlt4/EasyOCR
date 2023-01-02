@@ -417,13 +417,7 @@ class CustomDataset(CraftBaseDataset):
                 cv2.fillPoly(confidence_mask, [np.int32(_word_bboxes[i])], 0)
                 continue
 
-            (
-                pseudo_char_bbox,
-                confidence,
-                horizontal_text_bool,
-            ) = self.pseudo_charbox_builder.build_char_box(
-                self.net, self.gpu, image, word_bboxes[i], words[i], img_name=img_name
-            )
+            pseudo_char_bbox, confidence, horizontal_text_bool = self.pseudo_charbox_builder.build_char_box(self.net, self.gpu, image, word_bboxes[i], words[i], img_name=img_name)
 
             cv2.fillPoly(confidence_mask, [np.int32(_word_bboxes[i])], confidence)
             do_care_words.append(words[i])

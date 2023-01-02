@@ -1,5 +1,5 @@
-torch
-torchvision>=0.5
+# torch
+# torchvision>=0.5
 opencv-python-headless<=4.5.4.60
 scipy
 numpy
@@ -10,3 +10,12 @@ PyYAML
 Shapely
 pyclipper
 ninja
+pandas
+numpy==1.20.3
+pyyaml
+six
+python-dateutil
+pyparsing
+oauthlib
+protobuf==3.17
+markdown

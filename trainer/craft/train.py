@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import wandb
+from tqdm import tqdm
 
 from config.load_config import load_yaml, DotDict
 from data.dataset import SynthTextDataSet, CustomDataset
@@ -136,7 +137,6 @@ class Trainer(object):
             )
 
     def train(self, buffer_dict):
-
         torch.cuda.set_device(self.gpu)
 
         # MODEL -------------------------------------------------------------------------------------------------------#
@@ -236,15 +236,7 @@ class Trainer(object):
             "================================ Train start ================================"
         )
         while train_step < whole_training_step:
-            for (
-                    index,
-                    (
-                            images,
-                            region_scores,
-                            affinity_scores,
-                            confidence_masks,
-                    ),
-            ) in enumerate(trn_real_loader):
+            for (index, (images, region_scores, affinity_scores, confidence_masks)) in enumerate(trn_real_loader):
                 craft.train()
                 if train_step > 0 and train_step % self.config.train.lr_decay == 0:
                     update_lr_rate_step += 1
@@ -433,6 +425,7 @@ def main():
     )
 
     args = parser.parse_args()
+
 
     # load configure
     exp_name = args.yaml
