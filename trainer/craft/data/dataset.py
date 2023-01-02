@@ -23,7 +23,8 @@ from data.imgaug import (
 )
 from data.pseudo_label.make_charbox import PseudoCharBoxBuilder
 from utils.util import saveInput, saveImage
-
+import lmdb
+import sys
 
 class CraftBaseDataset(Dataset):
     def __init__(
@@ -55,14 +56,16 @@ class CraftBaseDataset(Dataset):
         self.sample = sample
         if self.sample != -1:
             random.seed(0)
-            self.idx = random.sample(range(0, len(self.img_names)), self.sample)
+            self.idx = random.sample(
+                range(0, len(self.img_names)), self.sample)
 
         self.pre_crop_area = []
 
     def augment_image(
         self, image, region_score, affinity_score, confidence_mask, word_level_char_bbox
     ):
-        augment_targets = [image, region_score, affinity_score, confidence_mask]
+        augment_targets = [image, region_score,
+                           affinity_score, confidence_mask]
 
         if self.aug.random_scale.option:
             augment_targets, word_level_char_bbox = random_scale(
@@ -100,7 +103,8 @@ class CraftBaseDataset(Dataset):
                 )
 
             elif self.aug.random_crop.version == "random_crop":
-                augment_targets = random_crop(augment_targets, self.output_size,)
+                augment_targets = random_crop(
+                    augment_targets, self.output_size,)
 
             else:
                 assert "Undefined RandomCrop version"
@@ -133,9 +137,11 @@ class CraftBaseDataset(Dataset):
         if self.sample != -1:
             return len(self.idx)
         else:
-            return len(self.img_names)
+            #return len(self.img_names)
+            return self.nSamples
 
     def __getitem__(self, index):
+        import pudb; pudb.set_trace()
         if self.sample != -1:
             index = self.idx[index]
         if self.saved_gt_dir is None:
@@ -185,7 +191,8 @@ class CraftBaseDataset(Dataset):
                 confidence_mask,
             )
 
-        region_score = self.resize_to_half(region_score, interpolation=cv2.INTER_CUBIC)
+        region_score = self.resize_to_half(
+            region_score, interpolation=cv2.INTER_CUBIC)
         affinity_score = self.resize_to_half(
             affinity_score, interpolation=cv2.INTER_CUBIC
         )
@@ -284,7 +291,7 @@ class SynthTextDataSet(CraftBaseDataset):
 
         for i in range(len(words)):
             length_of_word = len(words[i])
-            word_bbox = all_char_bbox[char_idx : char_idx + length_of_word]
+            word_bbox = all_char_bbox[char_idx: char_idx + length_of_word]
             assert len(word_bbox) == length_of_word
             char_idx += length_of_word
             word_bbox = np.array(word_bbox)
@@ -355,11 +362,21 @@ class CustomDataset(CraftBaseDataset):
             watershed_param, vis_test_dir, pseudo_vis_opt, self.gaussian_builder
         )
         self.vis_index = list(range(1000))
+
         self.img_dir = os.path.join(data_dir, "ch4_training_images")
         self.img_gt_box_dir = os.path.join(
             data_dir, "ch4_training_localization_transcription_gt"
         )
         self.img_names = os.listdir(self.img_dir)
+
+        self.env = lmdb.open("htc-dataset-100/train_ma", max_readers=32, readonly=True, lock=False, readahead=False, meminit=False)
+
+        if not self.env:
+            print("cannot create lmdb from %s" % ("htc-dataset-100/train_ma"))
+            sys.exit(1)
+
+        with self.env.begin(write=False) as txn:
+            self.nSamples = int(txn.get('num-samples'.encode()))
 
     def update_model(self, net):
         self.net = net
@@ -385,18 +402,45 @@ class CustomDataset(CraftBaseDataset):
             words.append(word)
         return np.array(word_bboxes), words
 
+    def load_img_gt_box2(self, labelBin):
+        lines = labelBin.decode("utf-8-sig").strip("\n").split("\n")
+        word_bboxes = []
+        words = []
+        for line in lines:
+            box_info = line.strip().encode("utf-8").decode("utf-8-sig").split(",")
+            box_points = [int(box_info[i]) for i in range(8)]
+            box_points = np.array(box_points, np.float32).reshape(4, 2)
+            word = box_info[8:]
+            word = ",".join(word)
+            if word in self.do_not_care_label:
+                words.append(self.do_not_care_label[0])
+                word_bboxes.append(box_points)
+                continue
+            word_bboxes.append(box_points)
+            words.append(word)
+        return np.array(word_bboxes), words
+
     def load_data(self, index):
-        img_name = self.img_names[index]
-        img_path = os.path.join(self.img_dir, img_name)
-        image = cv2.imread(img_path)
+        import pudb; pudb.set_trace()
+        with self.env.begin(write=False) as txn:
+            imageKey = 'image-%09d'.encode() % index
+            labelKey = 'label-%09d'.encode() % index
+            nameKey = 'name-%09d'.encode() % index
+            imageBin = txn.get(imageKey)
+            labelBin = txn.get(labelKey)
+            img_name = txn.get(nameKey).decode("utf-8-sig")
+
+        #img_name = self.img_names[index]
+        #img_path = os.path.join(self.img_dir, img_name)
+        #image = cv2.imread(img_path)
+        png_as_np = np.frombuffer(imageBin, dtype=np.uint8)
+        image = cv2.imdecode(png_as_np, flags=cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        img_gt_box_path = os.path.join(
-            self.img_gt_box_dir, "gt_%s.txt" % os.path.splitext(img_name)[0]
-        )
-        word_bboxes, words = self.load_img_gt_box(
-            img_gt_box_path
-        )  # shape : (Number of word bbox, 4, 2)
+        #img_gt_box_path = os.path.join(
+        #    self.img_gt_box_dir, "gt_%s.txt" % os.path.splitext(img_name)[0]
+        #)
+        word_bboxes, words = self.load_img_gt_box2(labelBin)  # shape : (Number of word bbox, 4, 2)
         confidence_mask = np.ones((image.shape[0], image.shape[1]), np.float32)
 
         word_level_char_bbox = []
@@ -417,9 +461,11 @@ class CustomDataset(CraftBaseDataset):
                 cv2.fillPoly(confidence_mask, [np.int32(_word_bboxes[i])], 0)
                 continue
 
-            pseudo_char_bbox, confidence, horizontal_text_bool = self.pseudo_charbox_builder.build_char_box(self.net, self.gpu, image, word_bboxes[i], words[i], img_name=img_name)
+            pseudo_char_bbox, confidence, horizontal_text_bool = self.pseudo_charbox_builder.build_char_box(
+                self.net, self.gpu, image, word_bboxes[i], words[i], img_name=img_name)
 
-            cv2.fillPoly(confidence_mask, [np.int32(_word_bboxes[i])], confidence)
+            cv2.fillPoly(confidence_mask, [
+                         np.int32(_word_bboxes[i])], confidence)
             do_care_words.append(words[i])
             word_level_char_bbox.append(pseudo_char_bbox)
             horizontal_text_bools.append(horizontal_text_bool)
@@ -506,8 +552,10 @@ class CustomDataset(CraftBaseDataset):
         saved_cf_mask_path = os.path.join(
             self.saved_gt_dir, f"res_img_{query_idx}_cf_mask_thresh_0.6.jpg"
         )
-        region_score = cv2.imread(saved_region_scores_path, cv2.IMREAD_GRAYSCALE)
-        affinity_score = cv2.imread(saved_affi_scores_path, cv2.IMREAD_GRAYSCALE)
+        region_score = cv2.imread(
+            saved_region_scores_path, cv2.IMREAD_GRAYSCALE)
+        affinity_score = cv2.imread(
+            saved_affi_scores_path, cv2.IMREAD_GRAYSCALE)
         confidence_mask = cv2.imread(saved_cf_mask_path, cv2.IMREAD_GRAYSCALE)
 
         region_score = cv2.resize(region_score, (img_w, img_h))

@@ -85,8 +85,8 @@ pip install -r requirements.txt
 
 * Step 2 : To train CRAFT with [SynthText + IC15] or custom dataset
     ```
-    CUDA_VISIBLE_DEVICES=0 python3 train.py --yaml=custom_data_train               ## if you run on single GPU
-    CUDA_VISIBLE_DEVICES=0,1 python3 train_distributed.py --yaml=custom_data_train   ## if you run on multi GPU
+    CUDA_VISIBLE_DEVICES=0 python3 train.py --yaml=htc_train_1gpu                       ## if you run on single GPU
+    CUDA_VISIBLE_DEVICES=0,1,2,3 python3 train_distributed.py --yaml=htc_train_4gpu     ## if you run on multi GPU
     ```
 
 ### Arguments

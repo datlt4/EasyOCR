@@ -2,3 +2,14 @@ __pycache__/
 model/__pycache__/
 wandb/*
 vis_result/*
+
+exp/
+htc-dataset-100/ch4_test_images/
+htc-dataset-100/ch4_test_localization_transcription_gt/
+htc-dataset-100/ch4_training_images/
+htc-dataset-100/ch4_training_localization_transcription_gt/
+htc-dataset-100/full_gt/
+htc-dataset-100/full_images/
+htc-dataset-100/test_ma/
+htc-dataset-100/train_ma/
+pretrained_model
