@@ -17,7 +17,7 @@ from config.load_config import load_yaml, DotDict
 from data.dataset import SynthTextDataSet, CustomDataset
 from loss.mseloss import Maploss_v2, Maploss_v3
 from model.craft import CRAFT
-from eval import main_eval
+from eval import main_eval, main_eval_dat_1gpu
 from metrics.eval_det_iou import DetectionIoUEvaluator
 from utils.util import copyStateDict, save_parser
 
@@ -106,7 +106,7 @@ class Trainer(object):
 
         evaluator = DetectionIoUEvaluator()
 
-        metrics = main_eval( None, self.config.train.backbone, test_config, evaluator, val_result_dir, buffer, model, self.mode, )
+        metrics = main_eval_dat_1gpu( None, self.config.train.backbone, test_config, evaluator, val_result_dir, buffer, model, self.mode, )
         if self.gpu == 0 and self.config.wandb_opt:
             wandb.log(
                 {
