@@ -9,7 +9,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from tqdm import tqdm
 import wandb
-
+import lmdb
 from config.load_config import load_yaml, DotDict
 from model.craft import CRAFT
 from metrics.eval_det_iou import DetectionIoUEvaluator
@@ -330,6 +330,129 @@ def main_eval(model_path, backbone, config, evaluator, result_dir, buffer, model
     metrics = evaluator.combine_results(results)
     print(metrics)
     return metrics
+
+
+def main_eval_dat_1gpu(model_path, backbone, config, evaluator, result_dir, buffer, model, mode):
+
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir, exist_ok=True)
+
+    # total_imgs_bboxes_gt, total_imgs_path = load_test_dataset_iou("custom_data", config)
+
+    gpu_idx = 0
+    torch.cuda.set_device(gpu_idx)
+
+    # Only evaluation time
+    if model is None:
+        if backbone == "vgg":
+            model = CRAFT()
+        else:
+            raise Exception("Undefined architecture")
+
+        print("Loading weights from checkpoint (" + model_path + ")")
+        net_param = torch.load(model_path, map_location=f"cuda:{gpu_idx}")
+        model.load_state_dict(copyStateDict(net_param["craft"]))
+
+        if config.cuda:
+            model = model.cuda()
+            cudnn.benchmark = False
+
+    # Distributed evaluation in the middle of training time
+    else:
+        if buffer is not None:
+            # check all buffer value is None for distributed evaluation
+            assert all(
+                v is None for v in buffer
+            ), "Buffer already filled with another value."
+
+    model.eval()
+
+    env = lmdb.open("htc-dataset-100/test_ma", max_readers=32, readonly=True, lock=False, readahead=False, meminit=False)
+    with env.begin(write=False) as txn:
+        nSamples = int(txn.get('num-samples'.encode()))
+    # -----------------------------------------------------------------------------------------------------------------#
+    total_imgs_bboxes_pre = []
+    total_imgs_bboxes_gt = []
+    for k, img_path in enumerate(tqdm(nSamples)):
+        with env.begin(write=False) as txn:
+            imageKey = 'image-%09d'.encode() % k
+            labelKey = 'label-%09d'.encode() % k
+            nameKey = 'name-%09d'.encode() % k
+            imageBin = txn.get(imageKey)
+            labelBin = txn.get(labelKey)
+            img_name = txn.get(nameKey).decode("utf-8-sig")
+
+        png_as_np = np.frombuffer(imageBin, dtype=np.uint8)
+        image = cv2.imdecode(png_as_np, flags=cv2.IMREAD_COLOR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        single_img_bbox = []
+        bboxes, polys, score_text = test_net(
+            model,
+            image,
+            config.text_threshold,
+            config.link_threshold,
+            config.low_text,
+            config.cuda,
+            config.poly,
+            config.canvas_size,
+            config.mag_ratio,
+        )
+
+        for box in bboxes:
+            box_info = {"points": box, "text": "###", "ignore": False}
+            single_img_bbox.append(box_info)
+        total_imgs_bboxes_pre.append(single_img_bbox)
+
+        lines = labelBin.decode("utf-8-sig").strip("\n").split("\n")
+        single_img_bboxes = []
+        for line in lines:
+            box_info_dict = {"points": None, "text": None, "ignore": None}
+
+            box_info = line.strip().encode("utf-8").decode("utf-8-sig").split(",")
+            box_points = [int(box_info[j]) for j in range(8)]
+            word = box_info[8:]
+            word = ",".join(word)
+            box_points = np.array(box_points, np.int32).reshape(4, 2)
+            cv2.polylines(
+                image, [np.array(box_points).astype(np.int)], True, (0, 0, 255), 1
+            )
+            box_info_dict["points"] = box_points
+            box_info_dict["text"] = word
+            if word == "###":
+                box_info_dict["ignore"] = True
+            else:
+                box_info_dict["ignore"] = False
+
+            single_img_bboxes.append(box_info_dict)
+        
+        total_imgs_bboxes_gt.append(single_img_bboxes)
+        if config.vis_opt:
+            viz_test(
+                image,
+                score_text,
+                pre_box=polys,
+                gt_box=single_img_bboxes,
+                img_name=img_path,
+                result_dir=result_dir,
+                test_folder_name="custom_data",
+            )
+
+    # When distributed evaluation mode, wait until buffer is full filled
+    if buffer is not None:
+        while None in buffer:
+            continue
+        assert all(v is not None for v in buffer), "Buffer not filled"
+        total_imgs_bboxes_pre = buffer
+
+    results = []
+    for i, (gt, pred) in enumerate(zip(total_imgs_bboxes_gt, total_imgs_bboxes_pre)):
+        perSampleMetrics_dict = evaluator.evaluate_image(gt, pred)
+        results.append(perSampleMetrics_dict)
+
+    metrics = evaluator.combine_results(results)
+    print(metrics)
+    return metrics
+
 
 def cal_eval(config, data, res_dir_name, opt, mode):
     evaluator = DetectionIoUEvaluator()

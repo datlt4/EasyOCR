@@ -48,14 +48,7 @@ class Trainer(object):
             sample=self.config.train.data.syn_sample,
         )
 
-        syn_loader = torch.utils.data.DataLoader(
-            dataset,
-            batch_size=self.config.train.batch_size // self.config.train.synth_ratio,
-            shuffle=False,
-            num_workers=self.config.train.num_workers,
-            drop_last=True,
-            pin_memory=True,
-        )
+        syn_loader = torch.utils.data.DataLoader( dataset, batch_size=self.config.train.batch_size // self.config.train.synth_ratio, shuffle=False, num_workers=self.config.train.num_workers, drop_last=True, pin_memory=True, )
         return syn_loader
 
     def get_custom_dataset(self):
@@ -109,22 +102,11 @@ class Trainer(object):
     def iou_eval(self, dataset, train_step, buffer, model):
         test_config = DotDict(self.config.test[dataset])
 
-        val_result_dir = os.path.join(
-            self.config.results_dir, "{}/{}".format(dataset + "_iou", str(train_step))
-        )
+        val_result_dir = os.path.join(self.config.results_dir, "{}/{}".format(dataset + "_iou", str(train_step)))
 
         evaluator = DetectionIoUEvaluator()
 
-        metrics = main_eval(
-            None,
-            self.config.train.backbone,
-            test_config,
-            evaluator,
-            val_result_dir,
-            buffer,
-            model,
-            self.mode,
-        )
+        metrics = main_eval( None, self.config.train.backbone, test_config, evaluator, val_result_dir, buffer, model, self.mode, )
         if self.gpu == 0 and self.config.wandb_opt:
             wandb.log(
                 {
@@ -150,9 +132,7 @@ class Trainer(object):
             supervision_device = self.gpu
             if self.config.train.ckpt_path is not None:
                 supervision_param = self.get_load_param(supervision_device)
-                supervision_model.load_state_dict(
-                    copyStateDict(supervision_param["craft"])
-                )
+                supervision_model.load_state_dict(copyStateDict(supervision_param["craft"]))
                 supervision_model = supervision_model.to(f"cuda:{supervision_device}")
             print(f"Supervision model loading on : gpu {supervision_device}")
         else:
@@ -187,22 +167,9 @@ class Trainer(object):
             trn_real_dataset.update_model(supervision_model)
             trn_real_dataset.update_device(supervision_device)
 
-        trn_real_loader = torch.utils.data.DataLoader(
-            trn_real_dataset,
-            batch_size=self.config.train.batch_size,
-            shuffle=False,
-            num_workers=self.config.train.num_workers,
-            drop_last=False,
-            pin_memory=True,
-        )
-
+        trn_real_loader = torch.utils.data.DataLoader(trn_real_dataset, batch_size=self.config.train.batch_size, shuffle=False, num_workers=self.config.train.num_workers, drop_last=False, pin_memory=True) 
         # OPTIMIZER ---------------------------------------------------------------------------------------------------#
-        optimizer = optim.Adam(
-            craft.parameters(),
-            lr=self.config.train.lr,
-            weight_decay=self.config.train.weight_decay,
-        )
-
+        optimizer = optim.Adam(craft.parameters(), lr=self.config.train.lr, weight_decay=self.config.train.weight_decay) 
         if self.config.train.ckpt_path is not None and self.config.train.st_iter != 0:
             optimizer.load_state_dict(copyStateDict(self.net_param["optimizer"]))
             self.config.train.st_iter = self.net_param["optimizer"]["state"][0]["step"]
@@ -212,11 +179,7 @@ class Trainer(object):
         # mixed precision
         if self.config.train.amp:
             scaler = torch.cuda.amp.GradScaler()
-
-            if (
-                    self.config.train.ckpt_path is not None
-                    and self.config.train.st_iter != 0
-            ):
+            if (self.config.train.ckpt_path is not None and self.config.train.st_iter != 0 ):
                 scaler.load_state_dict(copyStateDict(self.net_param["scaler"]))
         else:
             scaler = None
@@ -240,12 +203,7 @@ class Trainer(object):
                 craft.train()
                 if train_step > 0 and train_step % self.config.train.lr_decay == 0:
                     update_lr_rate_step += 1
-                    training_lr = self.adjust_learning_rate(
-                        optimizer,
-                        self.config.train.gamma,
-                        update_lr_rate_step,
-                        self.config.train.lr,
-                    )
+                    training_lr = self.adjust_learning_rate(optimizer, self.config.train.gamma, update_lr_rate_step, self.config.train.lr)
 
                 images = images.cuda(non_blocking=True)
                 region_scores = region_scores.cuda(non_blocking=True)
@@ -254,9 +212,7 @@ class Trainer(object):
 
                 if self.config.train.use_synthtext:
                     # Synth image load
-                    syn_image, syn_region_label, syn_affi_label, syn_confidence_mask = next(
-                        batch_syn
-                    )
+                    syn_image, syn_region_label, syn_affi_label, syn_confidence_mask = next(batch_syn)
                     syn_image = syn_image.cuda(non_blocking=True)
                     syn_region_label = syn_region_label.cuda(non_blocking=True)
                     syn_affi_label = syn_affi_label.cuda(non_blocking=True)
@@ -264,13 +220,9 @@ class Trainer(object):
 
                     # concat syn & custom image
                     images = torch.cat((syn_image, images), 0)
-                    region_image_label = torch.cat(
-                        (syn_region_label, region_scores), 0
-                    )
+                    region_image_label = torch.cat((syn_region_label, region_scores), 0)
                     affinity_image_label = torch.cat((syn_affi_label, affinity_scores), 0)
-                    confidence_mask_label = torch.cat(
-                        (syn_confidence_mask, confidence_masks), 0
-                    )
+                    confidence_mask_label = torch.cat((syn_confidence_mask, confidence_masks), 0)
                 else:
                     region_image_label = region_scores
                     affinity_image_label = affinity_scores
@@ -278,20 +230,10 @@ class Trainer(object):
 
                 if self.config.train.amp:
                     with torch.cuda.amp.autocast():
-
                         output, _ = craft(images)
                         out1 = output[:, :, :, 0]
                         out2 = output[:, :, :, 1]
-
-                        loss = criterion(
-                            region_image_label,
-                            affinity_image_label,
-                            out1,
-                            out2,
-                            confidence_mask_label,
-                            self.config.train.neg_rto,
-                            self.config.train.n_min_neg,
-                        )
+                        loss = criterion(region_image_label, affinity_image_label, out1, out2, confidence_mask_label, self.config.train.neg_rto, self.config.train.n_min_neg)
 
                     optimizer.zero_grad()
                     scaler.scale(loss).backward()
@@ -302,15 +244,7 @@ class Trainer(object):
                     output, _ = craft(images)
                     out1 = output[:, :, :, 0]
                     out2 = output[:, :, :, 1]
-                    loss = criterion(
-                        region_image_label,
-                        affinity_image_label,
-                        out1,
-                        out2,
-                        confidence_mask_label,
-                        self.config.train.neg_rto,
-                    )
-
+                    loss = criterion(region_image_label, affinity_image_label, out1, out2, confidence_mask_label, self.config.train.neg_rto)
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
@@ -342,44 +276,21 @@ class Trainer(object):
                     if self.config.wandb_opt:
                         wandb.log({"train_step": train_step, "mean_loss": mean_loss})
 
-                if (
-                        train_step % self.config.train.eval_interval == 0
-                        and train_step != 0
-                ):
-
+                if (train_step % self.config.train.eval_interval == 0 and train_step != 0):
                     craft.eval()
 
                     print("Saving state, index:", train_step)
-                    save_param_dic = {
-                        "iter": train_step,
-                        "craft": craft.state_dict(),
-                        "optimizer": optimizer.state_dict(),
-                    }
-                    save_param_path = (
-                            self.config.results_dir
-                            + "/CRAFT_clr_"
-                            + repr(train_step)
-                            + ".pth"
-                    )
+                    save_param_dic = {"iter": train_step, "craft": craft.state_dict(), "optimizer": optimizer.state_dict()}
+                    save_param_path = (self.config.results_dir + "/CRAFT_clr_" + repr(train_step) + ".pth")
 
                     if self.config.train.amp:
                         save_param_dic["scaler"] = scaler.state_dict()
-                        save_param_path = (
-                                self.config.results_dir
-                                + "/CRAFT_clr_amp_"
-                                + repr(train_step)
-                                + ".pth"
-                        )
+                        save_param_path = (self.config.results_dir + "/CRAFT_clr_amp_" + repr(train_step) + ".pth")
 
                     torch.save(save_param_dic, save_param_path)
 
                     # validation
-                    self.iou_eval(
-                        "custom_data",
-                        train_step,
-                        buffer_dict["custom_data"],
-                        craft,
-                    )
+                    self.iou_eval("custom_data", train_step, buffer_dict["custom_data"], craft)
 
                 train_step += 1
                 if train_step >= whole_training_step:
@@ -391,38 +302,19 @@ class Trainer(object):
                 trn_real_dataset.update_model(supervision_model)
 
         # save last model
-        save_param_dic = {
-            "iter": train_step,
-            "craft": craft.state_dict(),
-            "optimizer": optimizer.state_dict(),
-        }
-        save_param_path = (
-                self.config.results_dir + "/CRAFT_clr_" + repr(train_step) + ".pth"
-        )
+        save_param_dic = {"iter": train_step, "craft": craft.state_dict(), "optimizer": optimizer.state_dict()}
+        save_param_path = (self.config.results_dir + "/CRAFT_clr_" + repr(train_step) + ".pth")
 
         if self.config.train.amp:
             save_param_dic["scaler"] = scaler.state_dict()
-            save_param_path = (
-                    self.config.results_dir
-                    + "/CRAFT_clr_amp_"
-                    + repr(train_step)
-                    + ".pth"
-            )
+            save_param_path = (self.config.results_dir + "/CRAFT_clr_amp_" + repr(train_step) + ".pth" )
         torch.save(save_param_dic, save_param_path)
 
 
 def main():
     parser = argparse.ArgumentParser(description="CRAFT custom data train")
-    parser.add_argument(
-        "--yaml",
-        "--yaml_file_name",
-        default="custom_data_train",
-        type=str,
-        help="Load configuration",
-    )
-    parser.add_argument(
-        "--port", "--use ddp port", default="2346", type=str, help="Port number"
-    )
+    parser.add_argument("--yaml", "--yaml_file_name", default="custom_data_train", type=str, help="Load configuration")
+    parser.add_argument("--port", "--use ddp port", default="2346", type=str, help="Port number")
 
     args = parser.parse_args()
 
@@ -442,9 +334,7 @@ def main():
         os.makedirs(res_dir)
 
     # Duplicate yaml file to result_dir
-    shutil.copy(
-        "config/" + args.yaml + ".yaml", os.path.join(res_dir, args.yaml) + ".yaml"
-    )
+    shutil.copy("config/" + args.yaml + ".yaml", os.path.join(res_dir, args.yaml) + ".yaml")
 
     if config["mode"] == "weak_supervision":
         mode = "weak_supervision"
