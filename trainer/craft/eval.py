@@ -373,7 +373,7 @@ def main_eval_dat_1gpu(model_path, backbone, config, evaluator, result_dir, buff
     # -----------------------------------------------------------------------------------------------------------------#
     total_imgs_bboxes_pre = []
     total_imgs_bboxes_gt = []
-    for k, img_path in enumerate(tqdm(nSamples)):
+    for k in tqdm(range(nSamples)):
         with env.begin(write=False) as txn:
             imageKey = 'image-%09d'.encode() % k
             labelKey = 'label-%09d'.encode() % k
@@ -432,7 +432,7 @@ def main_eval_dat_1gpu(model_path, backbone, config, evaluator, result_dir, buff
                 score_text,
                 pre_box=polys,
                 gt_box=single_img_bboxes,
-                img_name=img_path,
+                img_name=img_name,
                 result_dir=result_dir,
                 test_folder_name="custom_data",
             )
